@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Bell, Loader2, ShieldCheck, X } from "lucide-react";
+import { signOut } from "next-auth/react";
+import { Bell, Loader2, LogOut, ShieldCheck, X } from "lucide-react";
 import { formatDateTime } from "@/lib/utils";
 
 interface Notification {
@@ -18,6 +19,7 @@ const typeStyle: Record<string, string> = {
 
 export default function Header({ user }: { user: any }) {
   const [open, setOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unread, setUnread] = useState(0);
   const [loadingNotifications, setLoadingNotifications] = useState(true);
@@ -80,7 +82,10 @@ export default function Header({ user }: { user: any }) {
         {/* Bell */}
         <div className="relative">
           <button
-            onClick={() => setOpen(!open)}
+            onClick={() => {
+              setOpen(!open);
+              setProfileOpen(false);
+            }}
             className="relative w-9 h-9 flex items-center justify-center rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-colors"
           >
             <Bell className="w-4 h-4 text-gray-600" />
@@ -138,9 +143,44 @@ export default function Header({ user }: { user: any }) {
           )}
         </div>
 
-        {/* Avatar */}
-        <div className="w-9 h-9 bg-teal-700 rounded-lg flex items-center justify-center text-white text-sm font-bold">
-          {user?.name?.charAt(0) ?? "?"}
+        {/* Profile */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => {
+              setProfileOpen(!profileOpen);
+              setOpen(false);
+            }}
+            className="w-9 h-9 bg-teal-700 rounded-lg flex items-center justify-center text-white text-sm font-bold hover:bg-teal-800 transition-colors"
+            aria-label="Open profile menu"
+          >
+            {user?.name?.charAt(0) ?? "?"}
+          </button>
+
+          {profileOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setProfileOpen(false)} />
+              <div className="fixed right-4 top-14 sm:absolute sm:right-0 sm:top-11 w-[calc(100vw-2rem)] sm:w-72 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden fade-in">
+                <div className="px-4 py-3 border-b border-gray-100">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{user?.name ?? "Staff user"}</p>
+                  <p className="text-xs text-gray-500 mt-0.5 truncate">{user?.email}</p>
+                  <p className="text-[11px] font-semibold text-teal-700 mt-2">
+                    {(user as any)?.role?.replace("_", " ") ?? "STAFF"}
+                  </p>
+                </div>
+                <div className="p-2">
+                  <button
+                    type="button"
+                    onClick={() => signOut({ callbackUrl: "/login" })}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>Sign out</span>
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 

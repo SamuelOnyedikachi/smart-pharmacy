@@ -1,15 +1,17 @@
 import { PrismaClient } from "@prisma/client";
 
-const databaseUrl = process.env.DATABASE_URL;
+export function validateDatabaseUrl() {
+  const databaseUrl = process.env.DATABASE_URL;
 
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is required. Set it to a MongoDB connection string before starting the app.");
-}
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is required. Set it to a MongoDB connection string before starting the app.");
+  }
 
-if (!databaseUrl.startsWith("mongodb://") && !databaseUrl.startsWith("mongodb+srv://")) {
-  throw new Error(
-    "Invalid DATABASE_URL protocol. This app uses Prisma with MongoDB, so DATABASE_URL must start with mongodb:// or mongodb+srv://.",
-  );
+  if (!databaseUrl.startsWith("mongodb://") && !databaseUrl.startsWith("mongodb+srv://")) {
+    throw new Error(
+      "Invalid DATABASE_URL protocol. This app uses Prisma with MongoDB, so DATABASE_URL must start with mongodb:// or mongodb+srv://.",
+    );
+  }
 }
 
 const globalForPrisma = globalThis as unknown as {

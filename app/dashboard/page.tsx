@@ -14,7 +14,7 @@ async function getDashboardData() {
   const monthStart = startOfMonth(now);
 
   const [totalMedicines, lowStockMeds, expiringMeds, expiredMeds, todaySales, monthlySales,
-         pendingDeliveries, totalCustomers, recentSales, revenueByDay, lowStockList] = await Promise.all([
+         pendingDeliveries, totalCustomers, recentSalesRaw, revenueByDay, lowStockList] = await Promise.all([
     prisma.medicine.count({ where: { isActive: true } }),
     prisma.medicine.count({ where: { isActive: true, stockQuantity: { lte: prisma.medicine.fields.reorderLevel } } }),
     prisma.medicine.count({ where: { isActive: true, expiryDate: { gte: now, lte: in90Days } } }),
@@ -23,7 +23,19 @@ async function getDashboardData() {
     prisma.sale.aggregate({ where: { createdAt: { gte: monthStart } }, _sum: { totalAmount: true } }),
     prisma.delivery.count({ where: { status: "PENDING" } }),
     prisma.customer.count(),
-    prisma.sale.findMany({ take: 6, orderBy: { createdAt: "desc" }, include: { cashier: { select: { name: true } }, customer: { select: { name: true } }, items: true } }),
+    prisma.sale.findMany({
+      take: 6,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        receiptNumber: true,
+        totalAmount: true,
+        createdAt: true,
+        cashierId: true,
+        customerId: true,
+        items: true,
+      },
+    }),
     Promise.all(Array.from({ length: 7 }, (_, i) => {
       const day = subDays(now, 6 - i);
       return prisma.sale.aggregate({
@@ -33,6 +45,25 @@ async function getDashboardData() {
     })),
     prisma.medicine.findMany({ where: { isActive: true, stockQuantity: { lte: 20 } }, orderBy: { stockQuantity: "asc" }, take: 6, select: { id: true, name: true, stockQuantity: true, reorderLevel: true, expiryDate: true } }),
   ]);
+
+  const [cashiers, customers] = await Promise.all([
+    prisma.user.findMany({
+      where: { id: { in: [...new Set(recentSalesRaw.map((sale) => sale.cashierId))] } },
+      select: { id: true, name: true },
+    }),
+    prisma.customer.findMany({
+      where: { id: { in: [...new Set(recentSalesRaw.map((sale) => sale.customerId).filter(Boolean) as string[])] } },
+      select: { id: true, name: true },
+    }),
+  ]);
+
+  const cashierById = new Map(cashiers.map((cashier) => [cashier.id, cashier]));
+  const customerById = new Map(customers.map((customer) => [customer.id, customer]));
+  const recentSales = recentSalesRaw.map((sale) => ({
+    ...sale,
+    cashier: cashierById.get(sale.cashierId) ?? { name: "Deleted staff" },
+    customer: sale.customerId ? customerById.get(sale.customerId) ?? null : null,
+  }));
 
   return {
     stats: {

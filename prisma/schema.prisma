@@ -1,0 +1,351 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ───────────────────────────────────────────────
+
+enum Role {
+  OWNER
+  STOCK_KEEPER
+  CASHIER
+  PHARMACIST
+  DRIVER
+  QA_PERSONNEL
+  SECURITY
+  SUPPLIER
+}
+
+enum MedicineCategory {
+  ANTIBIOTICS
+  ANALGESICS
+  ANTIHYPERTENSIVES
+  ANTIDIABETICS
+  ANTIHISTAMINES
+  VITAMINS
+  ANTIFUNGALS
+  ANTIVIRALS
+  CARDIOVASCULAR
+  GASTROINTESTINAL
+  RESPIRATORY
+  NEUROLOGICAL
+  HORMONAL
+  DERMATOLOGICAL
+  OPHTHALMIC
+  OTHER
+}
+
+enum DeliveryStatus {
+  PENDING
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+
+enum SaleStatus {
+  COMPLETED
+  REFUNDED
+  PENDING
+}
+
+enum QualityStatus {
+  PASSED
+  FAILED
+  UNDER_REVIEW
+}
+
+enum InteractionSeverity {
+  MILD
+  MODERATE
+  SEVERE
+  CONTRAINDICATED
+}
+
+// ─── USER / AUTH ──────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid()) @map("_id")
+  name          String
+  email         String    @unique
+  password      String
+  role          Role
+  phone         String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  sales         Sale[]
+  deliveries    Delivery[]  @relation("DriverDeliveries")
+  activityLogs  ActivityLog[]
+  qualityChecks QualityCheck[]
+
+  @@map("users")
+}
+
+// ─── ADDRESS ──────────────────────────────────────────────
+
+model Address {
+  id         String   @id @default(cuid()) @map("_id")
+  street     String
+  city       String
+  state      String
+  country    String   @default("Nigeria")
+  postalCode String?
+  createdAt  DateTime @default(now())
+
+  suppliers  Supplier[]
+  customers  Customer[]
+
+  @@map("addresses")
+}
+
+// ─── MEDICINE ─────────────────────────────────────────────
+
+model Medicine {
+  id              String           @id @default(cuid()) @map("_id")
+  name            String
+  genericName     String?
+  category        MedicineCategory
+  manufacturer    String
+  dosage          String           // e.g. "500mg", "10mg/5ml"
+  form            String           // tablet, syrup, injection, etc.
+  batchNumber     String           @unique
+  expiryDate      DateTime
+  stockQuantity   Int              @default(0)
+  reorderLevel    Int              @default(10)  // triggers low-stock alert
+  unitPrice       Float
+  requiresPrescription Boolean     @default(false)
+  description     String?
+  imageUrl        String?
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  // Relations
+  saleItems       SaleItem[]
+  deliveryItems   DeliveryItem[]
+  qualityChecks   QualityCheck[]
+  interactionsA   DrugInteraction[] @relation("DrugA")
+  interactionsB   DrugInteraction[] @relation("DrugB")
+
+  @@map("medicines")
+}
+
+// ─── SUPPLIER ─────────────────────────────────────────────
+
+model Supplier {
+  id          String   @id @default(cuid()) @map("_id")
+  name        String
+  contactName String
+  email       String   @unique
+  phone       String
+  addressId   String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  address     Address?   @relation(fields: [addressId], references: [id])
+  deliveries  Delivery[]
+
+  @@map("suppliers")
+}
+
+// ─── DELIVERY ─────────────────────────────────────────────
+
+model Delivery {
+  id           String         @id @default(cuid()) @map("_id")
+  supplierId   String
+  driverId     String?
+  status       DeliveryStatus @default(PENDING)
+  expectedDate DateTime
+  deliveredAt  DateTime?
+  notes        String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  supplier     Supplier       @relation(fields: [supplierId], references: [id])
+  driver       User?          @relation("DriverDeliveries", fields: [driverId], references: [id])
+  items        DeliveryItem[]
+
+  @@map("deliveries")
+}
+
+model DeliveryItem {
+  id           String   @id @default(cuid()) @map("_id")
+  deliveryId   String
+  medicineId   String
+  quantity     Int
+  unitCost     Float
+
+  delivery     Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  medicine     Medicine @relation(fields: [medicineId], references: [id])
+
+  @@map("delivery_items")
+}
+
+// ─── CUSTOMER ─────────────────────────────────────────────
+
+model Customer {
+  id          String   @id @default(cuid()) @map("_id")
+  name        String
+  phone       String?
+  email       String?
+  addressId   String?
+  dateOfBirth DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  address     Address?  @relation(fields: [addressId], references: [id])
+  sales       Sale[]
+  prescriptions Prescription[]
+
+  @@map("customers")
+}
+
+// ─── PRESCRIPTION ─────────────────────────────────────────
+
+model Prescription {
+  id           String   @id @default(cuid()) @map("_id")
+  customerId   String
+  doctorName   String
+  hospitalName String?
+  issuedDate   DateTime
+  expiryDate   DateTime?
+  notes        String?
+  imageUrl     String?  // scan of prescription
+  isUsed       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  customer     Customer @relation(fields: [customerId], references: [id])
+  sales        Sale[]
+
+  @@map("prescriptions")
+}
+
+// ─── SALE ─────────────────────────────────────────────────
+
+model Sale {
+  id             String     @id @default(cuid()) @map("_id")
+  cashierId      String
+  customerId     String?
+  prescriptionId String?
+  status         SaleStatus @default(COMPLETED)
+  totalAmount    Float
+  discount       Float      @default(0)
+  amountPaid     Float
+  change         Float      @default(0)
+  receiptNumber  String     @unique @default(cuid())
+  notes          String?
+  createdAt      DateTime   @default(now())
+
+  cashier        User         @relation(fields: [cashierId], references: [id])
+  customer       Customer?    @relation(fields: [customerId], references: [id])
+  prescription   Prescription? @relation(fields: [prescriptionId], references: [id])
+  items          SaleItem[]
+
+  @@map("sales")
+}
+
+model SaleItem {
+  id         String   @id @default(cuid()) @map("_id")
+  saleId     String
+  medicineId String
+  quantity   Int
+  unitPrice  Float
+  subtotal   Float
+
+  sale       Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  medicine   Medicine @relation(fields: [medicineId], references: [id])
+
+  @@map("sale_items")
+}
+
+// ─── DRUG INTERACTION ─────────────────────────────────────
+
+model DrugInteraction {
+  id          String              @id @default(cuid()) @map("_id")
+  drugAId     String
+  drugBId     String
+  severity    InteractionSeverity
+  description String
+  recommendation String?
+  source      String?             // reference material
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  drugA       Medicine @relation("DrugA", fields: [drugAId], references: [id])
+  drugB       Medicine @relation("DrugB", fields: [drugBId], references: [id])
+
+  @@unique([drugAId, drugBId])
+  @@map("drug_interactions")
+}
+
+// ─── QUALITY CHECK ────────────────────────────────────────
+
+model QualityCheck {
+  id          String        @id @default(cuid()) @map("_id")
+  medicineId  String
+  inspectorId String
+  status      QualityStatus
+  batchNumber String
+  notes       String?
+  checkedAt   DateTime      @default(now())
+
+  medicine    Medicine @relation(fields: [medicineId], references: [id])
+  inspector   User     @relation(fields: [inspectorId], references: [id])
+
+  @@map("quality_checks")
+}
+
+// ─── ACTIVITY LOG ─────────────────────────────────────────
+
+model ActivityLog {
+  id        String   @id @default(cuid()) @map("_id")
+  userId    String
+  action    String
+  entity    String   // e.g. "Medicine", "Sale", "User"
+  entityId  String?
+  details   Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  user      User @relation(fields: [userId], references: [id])
+
+  @@map("activity_logs")
+}
+
+// ─── NOTIFICATION ─────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(cuid()) @map("_id")
+  title     String
+  message   String
+  type      String   // LOW_STOCK, EXPIRY, DELIVERY, INTERACTION
+  isRead    Boolean  @default(false)
+  entityId  String?
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
+
+// ─── SYSTEM SETTINGS ─────────────────────────────────────
+
+model SystemSetting {
+  id          String   @id @default(cuid()) @map("_id")
+  key         String   @unique
+  title       String
+  description String
+  iconKey     String
+  status      String
+  statusTone  String   @default("green")
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_settings")
+}
